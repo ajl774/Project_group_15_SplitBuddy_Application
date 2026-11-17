@@ -1,11 +1,17 @@
+
 import { createContext, useContext, useState, type ReactNode } from "react";
 import * as auth from "../services/auth";
 import type { User } from "../types";
 
 type AuthValue = {
   user: User | null;
-  logIn: (email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string) => Promise<void>;
+  logIn: (username: string, password: string) => Promise<void>;
+  signUp: (
+    name: string,
+    email: string,
+    username: string,
+    password: string
+  ) => Promise<void>;
   logOut: () => void;
 };
 
@@ -16,8 +22,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthValue = {
     user,
-    logIn: async (email, password) => setUser(await auth.logIn(email, password)),
-    signUp: async (name, email, password) => setUser(await auth.signUp(name, email, password)),
+
+    logIn: async (username, password) =>
+      setUser(await auth.logIn(username, password)),
+
+    signUp: async (name, email, username, password) =>
+      setUser(await auth.signUp(name, email, username, password)),
+
     logOut: () => {
       auth.logOut();
       setUser(null);

@@ -10,7 +10,7 @@ export default function Login() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? "/dashboard";
 
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -21,13 +21,13 @@ export default function Login() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
-    if (!email.trim() || !password) {
-      setError("Please enter your email and password.");
+    if (!username.trim() || !password) {
+      setError("Please enter your username and password.");
       return;
     }
     setSubmitting(true);
     try {
-      await logIn(email, password);
+      await logIn(username, password);
       navigate(from, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -47,16 +47,16 @@ export default function Login() {
     >
       <form className="auth-form" onSubmit={submit} noValidate>
         <label className="field-label">
-          Email
+          Username
           <input
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoFocus
+            type="text"
+            autoComplete="username"
+            placeholder="Your username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+    a       utoFocus
           />
-        </label>
+      </label>
         <label className="field-label">
           Password
           <div className="amount-input password-input">
