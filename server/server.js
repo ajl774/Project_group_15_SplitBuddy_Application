@@ -1,7 +1,9 @@
+import "dotenv/config";
 import express from "express";
 import bodyParser from "body-parser";
 import pg from "pg";
 import cors from 'cors';
+import bcrypt from "bcrypt";
 
 const app = express();
 
@@ -9,11 +11,11 @@ const app = express();
 // Database connection setup
 
 const split = new pg.Client({
-    user: "postgres",
-    host: "localhost",
-    database: "split",
-    password: "123456789",
-    port: 5433
+    user: process.env.DB_USER,
+    host: process.env.DB_HOST,
+    database: process.env.DB_NAME,
+    password: process.env.DB_PASSWORD,
+    port: Number(process.env.DB_PORT)
 });
 
 
@@ -34,15 +36,188 @@ const split = new pg.Client({
         
     
 
-split.connect();
+const port = process.env.PORT || 5000;
+
+async function startServer() {
+    try {
+        await split.connect();
+
+        console.log("Connected to SplitBuddy PostgreSQL database!");
+
+        app.listen(port, () => {
+            console.log(`Server running on port ${port}.`);
+        });
+
+    } catch (err) {
+        console.error("Database connection failed:", err.message);
+        process.exit(1);
+    }
+}
 app.use(cors()); 
 app.use(express.json());
 app.use(express.static('public'));
-const port = 5000;
 let currentUser = -1;
 
 app.use(bodyParser.urlencoded({ extended: true}));
 app.use(express.static('public'));
+
+
+// ==========================================
+// AUTHENTICATION ROUTES
+// ==========================================
+
+// Register a new user
+app.post("/api/auth/signup", async (req, res) => {
+    const { name, email, username, password } = req.body;
+
+    if (!name?.trim() || !email?.trim() || !username?.trim() || !password) {
+        return res.status(400).json({
+            error: "Please fill in all required fields."
+        });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return res.status(400).json({
+        error: "Please enter a valid email address."
+    });
+}
+
+    if (password.length < 8) {
+        return res.status(400).json({
+            error: "Password must be at least 8 characters."
+        });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedUsername = username.trim();
+
+    try {
+        // Check whether the username or email already exists
+        const existingUser = await split.query(
+            `SELECT user_id
+             FROM users
+             WHERE LOWER(username) = LOWER($1)
+                OR LOWER(email) = LOWER($2)`,
+            [normalizedUsername, normalizedEmail]
+        );
+
+        if (existingUser.rows.length > 0) {
+            return res.status(409).json({
+                error: "That username or email is already registered."
+            });
+        }
+
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        // Start a database transaction
+        await split.query("BEGIN");
+
+        try {
+            // Create the user
+            const result = await split.query(
+                `INSERT INTO users (full_name, email, username, password)
+                 VALUES ($1, $2, $3, $4)
+                 RETURNING user_id, full_name, email, username`,
+                [name.trim(), normalizedEmail, normalizedUsername, hashedPassword]
+            );
+
+            const newUser = result.rows[0];
+
+            // Create an empty members record
+            await split.query(
+                "INSERT INTO members (user_id) VALUES ($1)",
+                [newUser.user_id]
+            );
+
+            await split.query("COMMIT");
+
+            return res.status(201).json({
+                message: "Account created successfully.",
+                user: {
+                    id: newUser.user_id,
+                    name: newUser.full_name,
+                    email: newUser.email
+                }
+            });
+
+        } catch (err) {
+            await split.query("ROLLBACK");
+            throw err;
+        }
+
+    } catch (err) {
+        console.error("Signup error:", err.message);
+
+        if (err.code === "23505") {
+            return res.status(409).json({
+                error: "That username or email is already registered."
+            });
+        }
+
+        return res.status(500).json({
+            error: "Unable to create your account."
+        });
+    }
+});
+
+
+// Log in an existing user
+app.post("/api/auth/login", async (req, res) => {
+    const { username, password } = req.body;
+
+    if (!username?.trim() || !password) {
+        return res.status(400).json({
+            error: "Please enter your username and password."
+        });
+    }
+
+    try {
+        // Find the account using its username
+        const result = await split.query(
+            `SELECT user_id, full_name, email, password
+             FROM users
+             WHERE LOWER(username) = LOWER($1)`,
+            [username.trim()]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({
+                error: "Incorrect username or password."
+            });
+        }
+
+        const account = result.rows[0];
+
+        // Compare submitted password against the stored hash
+        const passwordMatches = await bcrypt.compare(
+            password,
+            account.password
+        );
+
+        if (!passwordMatches) {
+            return res.status(401).json({
+                error: "Incorrect username or password."
+            });
+        }
+
+        return res.status(200).json({
+            message: "Login successful.",
+            user: {
+                id: account.user_id,
+                name: account.full_name,
+                email: account.email
+            }
+        });
+
+    } catch (err) {
+        console.error("Login error:", err.message);
+
+        return res.status(500).json({
+            error: "Unable to log in."
+        });
+    }
+});
+
 
 // Function to get expenses for a specific user
 async function getExpenses(user_id) {
@@ -225,9 +400,7 @@ async function removeUserFromGroup(user_id, group_id) {
 
 
 
-app.listen(port, () => {
-    console.log(`server running on port ${port}.`);
-})
+startServer();
 
 
 
